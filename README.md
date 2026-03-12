@@ -17,6 +17,8 @@ git clone https://github.com/kriksa/web-books-server
 
 cd web-books-server
 
+Создать папку data и  скопировать в нее файлы genres.js и languages.js
+
 chmod +x script.sh
 
 ./script.sh
