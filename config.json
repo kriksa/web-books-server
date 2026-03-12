@@ -1,0 +1,14 @@
+{
+  "books_dir": "/books/Flibusta.Net",
+  "db_host": "localhost",
+  "db_port": "3306",
+  "db_user": "kriksa",
+  "db_password": "kriksa91",
+  "db_name": "books1_db",
+  "port": "8080",
+  "opds_root": "/opds",
+  "admin_password_hash": "$2a$10$V7d4I.b/bIUz8LP/oiLoI.9c9jwlqpZ0Sfavj4plGR5d4zUm6IWia",
+  "jwt_signing_key": "v7yyrp1QZ9LdeMViJbjfPEveX2bAXRkiak+ez1C/2xU=",
+  "reader_enabled": true,
+  "reader_url": "https://read.books-kriksa.ru/#/reader?url="
+}
