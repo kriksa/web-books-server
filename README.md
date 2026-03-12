@@ -17,7 +17,6 @@ bash
 git clone https://github.com/kriksa/web-books-server
 
 cd web-books-server
-(Для сборки под Windows используйте скрипт сбрки script.bat)
 
 chmod +x script.sh
 
