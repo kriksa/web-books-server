@@ -21,6 +21,7 @@ cd web-books-server
 chmod +x script.sh
 
 ./script.sh
+
 ./web_books
 
 При первом запуске создайте администратора и укажите путь к папке с INPX/ZIP файлами. База заполнится автоматически.
