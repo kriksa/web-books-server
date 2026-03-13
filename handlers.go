@@ -39,7 +39,7 @@ func readerConfigHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"reader_enabled":          cfg.ReaderEnabled,
 		"reader_url":              cfg.ReaderURL,
-		"default_search_language":  cfg.DefaultSearchLanguage,
+		"default_search_language": cfg.DefaultSearchLanguage,
 	})
 }
 
@@ -48,91 +48,96 @@ func configHandler(sm *SystemManager) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
 		switch r.Method {
-			case http.MethodGet:
-				cfg, err := LoadConfig()
+		case http.MethodGet:
+			cfg, err := LoadConfig()
+			if err != nil {
+				log.Printf("Ошибка загрузки конфига в API: %v", err)
+				http.Error(w, "Не удалось загрузить конфигурацию", http.StatusInternalServerError)
+				return
+			}
+
+			// ИСПРАВЛЕНИЕ: Правильный формат ответа для фронтенда
+			response := map[string]interface{}{
+				"books_dir":                cfg.BooksDir,
+				"port":                     cfg.Port,
+				"opds_root":                cfg.OPDSRoot,
+				"web_password":             "", // Не возвращаем пароль при GET
+				"reader_enabled":           cfg.ReaderEnabled,
+				"reader_url":               cfg.ReaderURL,
+				"default_search_language":  cfg.DefaultSearchLanguage,
+			}
+
+			json.NewEncoder(w).Encode(response)
+
+		case http.MethodPost:
+			// ИСПРАВЛЕНИЕ: Правильная структура запроса
+			var req struct {
+				BooksDir               string `json:"books_dir"`
+				Port                   string `json:"port"`
+				OPDSRoot               string `json:"opds_root"`
+				WebPassword            string `json:"web_password"`
+				ReaderEnabled          bool   `json:"reader_enabled"`
+				ReaderURL              string `json:"reader_url"`
+				DefaultSearchLanguage  string `json:"default_search_language"`
+			}
+
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Некорректный JSON: " + err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			if req.BooksDir == "" {
+				http.Error(w, "Обязательные поля не заполнены", http.StatusBadRequest)
+				return
+			}
+
+			currentCfg, err := LoadConfig()
+			if err != nil {
+				http.Error(w, "Ошибка чтения файла конфигурации", http.StatusInternalServerError)
+				return
+			}
+
+			needRestart := currentCfg.BooksDir != req.BooksDir
+
+			currentCfg.BooksDir = req.BooksDir
+			currentCfg.Port = req.Port
+			currentCfg.OPDSRoot = req.OPDSRoot
+			currentCfg.ReaderEnabled = req.ReaderEnabled
+			currentCfg.ReaderURL = req.ReaderURL
+			currentCfg.DefaultSearchLanguage = strings.TrimSpace(req.DefaultSearchLanguage)
+
+			// ИСПРАВЛЕНИЕ: Обрабатываем удаление пароля
+			if req.WebPassword == "" {
+				// Если пришёл пустой пароль - удаляем существующий
+				currentCfg.WebPasswordHash = ""
+			} else {
+				// Если пароль не пустой - хешируем и сохраняем новый
+				hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.WebPassword), bcrypt.DefaultCost)
 				if err != nil {
-					log.Printf("Ошибка загрузки конфига в API: %v", err)
-					http.Error(w, "Не удалось загрузить конфигурацию", http.StatusInternalServerError)
+					http.Error(w, "Ошибка хеширования пароля", http.StatusInternalServerError)
 					return
 				}
+				currentCfg.WebPasswordHash = string(hashedPassword)
+			}
 
-				// ИСПРАВЛЕНИЕ: Правильный формат ответа для фронтенда
-				response := map[string]interface{}{
-					"books_dir":                cfg.BooksDir,
-					"port":                     cfg.Port,
-					"opds_root":                cfg.OPDSRoot,
-					"web_password":             "", // Не возвращаем пароль при GET
-					"reader_enabled":           cfg.ReaderEnabled,
-					"reader_url":               cfg.ReaderURL,
-					"default_search_language":  cfg.DefaultSearchLanguage,
-				}
+			if err := SaveConfig(currentCfg); err != nil {
+				log.Printf("Ошибка сохранения конфига: %v", err)
+				http.Error(w, "Ошибка записи файла", http.StatusInternalServerError)
+				return
+			}
 
-				json.NewEncoder(w).Encode(response)
+			if needRestart {
+				go sm.ReloadServices(true)
+			}
 
-			case http.MethodPost:
-				// ИСПРАВЛЕНИЕ: Правильная структура запроса
-				var req struct {
-					BooksDir               string `json:"books_dir"`
-					Port                   string `json:"port"`
-					OPDSRoot               string `json:"opds_root"`
-					WebPassword            string `json:"web_password"`
-					ReaderEnabled          bool   `json:"reader_enabled"`
-					ReaderURL              string `json:"reader_url"`
-					DefaultSearchLanguage  string `json:"default_search_language"`
-				}
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":    "ok",
+				"restarting": needRestart,
+			})
 
-				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-					http.Error(w, "Некорректный JSON: " + err.Error(), http.StatusBadRequest)
-					return
-				}
-
-				if req.BooksDir == "" {
-					http.Error(w, "Обязательные поля не заполнены", http.StatusBadRequest)
-					return
-				}
-
-				currentCfg, err := LoadConfig()
-				if err != nil {
-					http.Error(w, "Ошибка чтения файла конфигурации", http.StatusInternalServerError)
-					return
-				}
-
-				needRestart := currentCfg.BooksDir != req.BooksDir
-
-				currentCfg.BooksDir = req.BooksDir
-				currentCfg.Port = req.Port
-				currentCfg.OPDSRoot = req.OPDSRoot
-				currentCfg.ReaderEnabled = req.ReaderEnabled
-				currentCfg.ReaderURL = req.ReaderURL
-				currentCfg.DefaultSearchLanguage = strings.TrimSpace(req.DefaultSearchLanguage)
-
-				if req.WebPassword != "" {
-					hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.WebPassword), bcrypt.DefaultCost)
-					if err != nil {
-						http.Error(w, "Ошибка хеширования пароля", http.StatusInternalServerError)
-						return
-					}
-					currentCfg.WebPasswordHash = string(hashedPassword)
-				}
-
-				if err := SaveConfig(currentCfg); err != nil {
-					log.Printf("Ошибка сохранения конфига: %v", err)
-					http.Error(w, "Ошибка записи файла", http.StatusInternalServerError)
-					return
-				}
-
-				if needRestart {
-					go sm.ReloadServices(true)
-				}
-
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"status":    "ok",
-					"restarting": needRestart,
-				})
-
-				default:
-					http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
+		default:
+			http.Error(w, "Метод не разрешён", http.StatusMethodNotAllowed)
 		}
 	}
 }
@@ -225,71 +230,71 @@ func apiBookDetailsHandler(dm *DBManager, booksDir string) http.HandlerFunc {
 		}
 
 		format = ensureFormat(format, fileName)
-			if format != "fb2" && format != "epub" {
-				http.Error(w, "Details available only for FB2 and EPUB files", http.StatusNotImplemented)
-				return
-			}
+		if format != "fb2" && format != "epub" {
+			http.Error(w, "Details available only for FB2 and EPUB files", http.StatusNotImplemented)
+			return
+		}
 
-			zipPath := filepath.Join(booksDir, zipName)
-			zf, err := zip.OpenReader(zipPath)
+		zipPath := filepath.Join(booksDir, zipName)
+		zf, err := zip.OpenReader(zipPath)
+		if err != nil {
+			log.Printf("Archive not found: %s", zipPath)
+			http.Error(w, "Archive not found", http.StatusNotFound)
+			return
+		}
+		defer zf.Close()
+
+		var targetFile *zip.File
+		targetPattern := fmt.Sprintf("%s.%s", fileName, format)
+
+		for _, f := range zf.File {
+			if strings.EqualFold(f.Name, targetPattern) {
+				targetFile = f
+				break
+			}
+		}
+
+		if targetFile == nil {
+			http.Error(w, "File not found in archive", http.StatusNotFound)
+			return
+		}
+
+		rc, err := targetFile.Open()
+		if err != nil {
+			http.Error(w, "Error opening file", http.StatusInternalServerError)
+			return
+		}
+		defer rc.Close()
+
+		content, err := io.ReadAll(rc)
+		if err != nil {
+			http.Error(w, "Error reading file content", http.StatusInternalServerError)
+			return
+		}
+
+		var details DetailedBookInfo
+
+		if format == "fb2" {
+			fb2, err := ParseFB2Metadata(content)
 			if err != nil {
-				log.Printf("Archive not found: %s", zipPath)
-				http.Error(w, "Archive not found", http.StatusNotFound)
+				log.Printf("FB2 Parse Error ID %d: %v", id, err)
+				http.Error(w, "Error parsing FB2 XML", http.StatusInternalServerError)
 				return
 			}
-			defer zf.Close()
-
-			var targetFile *zip.File
-			targetPattern := fmt.Sprintf("%s.%s", fileName, format)
-
-			for _, f := range zf.File {
-				if strings.EqualFold(f.Name, targetPattern) {
-					targetFile = f
-					break
-				}
-			}
-
-			if targetFile == nil {
-				http.Error(w, "File not found in archive", http.StatusNotFound)
-				return
-			}
-
-			rc, err := targetFile.Open()
+			details = ExtractDetailedInfo(fb2)
+		} else if format == "epub" {
+			parser, err := pamphlet.OpenBytes(content)
 			if err != nil {
-				http.Error(w, "Error opening file", http.StatusInternalServerError)
+				log.Printf("EPUB Parse Error ID %d (Pamphlet): %v", id, err)
+				http.Error(w, "Error parsing EPUB metadata", http.StatusInternalServerError)
 				return
 			}
-			defer rc.Close()
+			epubBook := parser.GetBook()
+			details = ConvertPamphletToDetails(epubBook)
+		}
 
-			content, err := io.ReadAll(rc)
-			if err != nil {
-				http.Error(w, "Error reading file content", http.StatusInternalServerError)
-				return
-			}
-
-			var details DetailedBookInfo
-
-			if format == "fb2" {
-				fb2, err := ParseFB2Metadata(content)
-				if err != nil {
-					log.Printf("FB2 Parse Error ID %d: %v", id, err)
-					http.Error(w, "Error parsing FB2 XML", http.StatusInternalServerError)
-					return
-				}
-				details = ExtractDetailedInfo(fb2)
-			} else if format == "epub" {
-				parser, err := pamphlet.OpenBytes(content)
-				if err != nil {
-					log.Printf("EPUB Parse Error ID %d (Pamphlet): %v", id, err)
-					http.Error(w, "Error parsing EPUB metadata", http.StatusInternalServerError)
-					return
-				}
-				epubBook := parser.GetBook()
-				details = ConvertPamphletToDetails(epubBook)
-			}
-
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			json.NewEncoder(w).Encode(details)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		json.NewEncoder(w).Encode(details)
 	}
 }
 
@@ -352,69 +357,69 @@ func apiCoverHandler(dm *DBManager, booksDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fileName := r.URL.Query().Get("file")
 		format := r.URL.Query().Get("format")
-			zipName := r.URL.Query().Get("zip")
+		zipName := r.URL.Query().Get("zip")
 
-			if fileName == "" || format == "" || zipName == "" {
-				http.Error(w, "Отсутствуют обязательные параметры", http.StatusBadRequest)
-				return
-			}
+		if fileName == "" || format == "" || zipName == "" {
+			http.Error(w, "Отсутствуют обязательные параметры", http.StatusBadRequest)
+			return
+		}
 
-			if format != "fb2" && format != "epub" {
+		if format != "fb2" && format != "epub" {
+			http.Error(w, "Cover not found", http.StatusNotFound)
+			return
+		}
+
+		cacheKey := fmt.Sprintf("%s:%s:%s", zipName, fileName, format)
+
+		if data, ok := imageCache.Get(cacheKey); ok {
+			if bytes.Equal(data, missingCoverMarker) {
 				http.Error(w, "Cover not found", http.StatusNotFound)
-				return
+			} else {
+				w.Header().Set("Content-Type", "image/jpeg")
+				w.Header().Set("Cache-Control", "public, max-age=3600")
+				w.Write(data)
 			}
+			return
+		}
 
-			cacheKey := fmt.Sprintf("%s:%s:%s", zipName, fileName, format)
+		zipPath := filepath.Join(booksDir, zipName)
+		if _, err := os.Stat(zipPath); os.IsNotExist(err) {
+			http.Error(w, "Cover not found", http.StatusNotFound)
+			return
+		}
 
-			if data, ok := imageCache.Get(cacheKey); ok {
-				if bytes.Equal(data, missingCoverMarker) {
-					http.Error(w, "Cover not found", http.StatusNotFound)
-				} else {
-					w.Header().Set("Content-Type", "image/jpeg")
-					w.Header().Set("Cache-Control", "public, max-age=3600")
-					w.Write(data)
-				}
-				return
-			}
+		type coverResult struct {
+			data []byte
+			mime string
+			err  error
+		}
+		resultChan := make(chan coverResult, 1)
 
-			zipPath := filepath.Join(booksDir, zipName)
-			if _, err := os.Stat(zipPath); os.IsNotExist(err) {
+		ctx, cancel := context.WithTimeout(context.Background(), CoverExtractTimeout)
+		defer cancel()
+
+		go func() {
+			data, mime, err := extractCover(zipPath, fileName, format)
+			resultChan <- coverResult{data: data, mime: mime, err: err}
+		}()
+
+		select {
+		case <-ctx.Done():
+			log.Printf("Таймаут извлечения обложки для: %s", cacheKey)
+			imageCache.Add(cacheKey, missingCoverMarker)
+			http.Error(w, "Cover not found", http.StatusNotFound)
+
+		case res := <-resultChan:
+			if res.err != nil {
+				imageCache.Add(cacheKey, missingCoverMarker)
 				http.Error(w, "Cover not found", http.StatusNotFound)
-				return
+			} else {
+				imageCache.Add(cacheKey, res.data)
+				w.Header().Set("Content-Type", res.mime)
+				w.Header().Set("Cache-Control", "public, max-age=3600")
+				w.Write(res.data)
 			}
-
-			type coverResult struct {
-				data []byte
-				mime string
-				err  error
-			}
-			resultChan := make(chan coverResult, 1)
-
-			ctx, cancel := context.WithTimeout(context.Background(), CoverExtractTimeout)
-			defer cancel()
-
-			go func() {
-				data, mime, err := extractCover(zipPath, fileName, format)
-				resultChan <- coverResult{data: data, mime: mime, err: err}
-			}()
-
-			select {
-				case <-ctx.Done():
-					log.Printf("Таймаут извлечения обложки для: %s", cacheKey)
-					imageCache.Add(cacheKey, missingCoverMarker)
-					http.Error(w, "Cover not found", http.StatusNotFound)
-
-				case res := <-resultChan:
-					if res.err != nil {
-						imageCache.Add(cacheKey, missingCoverMarker)
-						http.Error(w, "Cover not found", http.StatusNotFound)
-					} else {
-						imageCache.Add(cacheKey, res.data)
-						w.Header().Set("Content-Type", res.mime)
-						w.Header().Set("Cache-Control", "public, max-age=3600")
-						w.Write(res.data)
-					}
-			}
+		}
 	}
 }
 
@@ -453,79 +458,79 @@ func downloadHandler(dm *DBManager, booksDir string) http.HandlerFunc {
 		}
 		format = ensureFormat(format, fileName)
 
-			zipPath := filepath.Join(booksDir, zipName)
-			if _, err := os.Stat(zipPath); os.IsNotExist(err) {
-				http.Error(w, fmt.Sprintf("ZIP-файл %s не найден", zipName), http.StatusNotFound)
-				return
+		zipPath := filepath.Join(booksDir, zipName)
+		if _, err := os.Stat(zipPath); os.IsNotExist(err) {
+			http.Error(w, fmt.Sprintf("ZIP-файл %s не найден", zipName), http.StatusNotFound)
+			return
+		}
+
+		zf, err := zip.OpenReader(zipPath)
+		if err != nil {
+			http.Error(w, "Не удалось открыть ZIP-архив", http.StatusInternalServerError)
+			return
+		}
+		defer zf.Close()
+
+		var targetFile *zip.File
+		targetName := fmt.Sprintf("%s.%s", fileName, format)
+
+		for _, f := range zf.File {
+			if strings.EqualFold(f.Name, targetName) {
+				targetFile = f
+				break
 			}
+		}
 
-			zf, err := zip.OpenReader(zipPath)
-			if err != nil {
-				http.Error(w, "Не удалось открыть ZIP-архив", http.StatusInternalServerError)
-				return
-			}
-			defer zf.Close()
-
-			var targetFile *zip.File
-			targetName := fmt.Sprintf("%s.%s", fileName, format)
-
+		if targetFile == nil {
 			for _, f := range zf.File {
-				if strings.EqualFold(f.Name, targetName) {
+				if strings.EqualFold(f.Name, fileName) {
 					targetFile = f
 					break
 				}
 			}
+		}
 
-			if targetFile == nil {
-				for _, f := range zf.File {
-					if strings.EqualFold(f.Name, fileName) {
-						targetFile = f
-						break
-					}
-				}
-			}
+		if targetFile == nil {
+			http.Error(w, fmt.Sprintf("Файл %s не найден в архиве", fileName), http.StatusNotFound)
+			return
+		}
 
-			if targetFile == nil {
-				http.Error(w, fmt.Sprintf("Файл %s не найден в архиве", fileName), http.StatusNotFound)
+		rc, err := targetFile.Open()
+		if err != nil {
+			http.Error(w, "Не удалось открыть файл в архиве", http.StatusInternalServerError)
+			return
+		}
+		defer rc.Close()
+
+		contentType := mimeForFormat(format)
+
+		safeTitle := sanitizeFilename(title)
+		safeAuthor := "unknown"
+		if author != "" {
+			safeAuthor = sanitizeFilename(author)
+		}
+
+		if safeTitle == "" {
+			safeTitle = "book"
+		}
+		if language == "" {
+			language = "unknown"
+		}
+
+		downloadFilename := fmt.Sprintf("%s - %s (%s).%s", safeTitle, safeAuthor, language, format)
+
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+downloadFilename+"\"")
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Length", strconv.FormatUint(targetFile.UncompressedSize64, 10))
+
+		bw := bufio.NewWriter(w)
+		defer bw.Flush()
+
+		if _, err := io.Copy(bw, rc); err != nil {
+			if errors.Is(err, http.ErrHandlerTimeout) || errors.Is(err, http.ErrAbortHandler) {
 				return
 			}
-
-			rc, err := targetFile.Open()
-			if err != nil {
-				http.Error(w, "Не удалось открыть файл в архиве", http.StatusInternalServerError)
-				return
-			}
-			defer rc.Close()
-
-			contentType := mimeForFormat(format)
-
-			safeTitle := sanitizeFilename(title)
-			safeAuthor := "unknown"
-			if author != "" {
-				safeAuthor = sanitizeFilename(author)
-			}
-
-			if safeTitle == "" {
-				safeTitle = "book"
-			}
-			if language == "" {
-				language = "unknown"
-			}
-
-			downloadFilename := fmt.Sprintf("%s - %s (%s).%s", safeTitle, safeAuthor, language, format)
-
-			w.Header().Set("Content-Disposition", "attachment; filename=\""+downloadFilename+"\"")
-			w.Header().Set("Content-Type", contentType)
-			w.Header().Set("Content-Length", strconv.FormatUint(targetFile.UncompressedSize64, 10))
-
-			bw := bufio.NewWriter(w)
-			defer bw.Flush()
-
-			if _, err := io.Copy(bw, rc); err != nil {
-				if errors.Is(err, http.ErrHandlerTimeout) || errors.Is(err, http.ErrAbortHandler) {
-					return
-				}
-			}
+		}
 	}
 }
 
@@ -637,10 +642,10 @@ func extractCoverFromEPUB(content []byte) ([]byte, string, error) {
 		for _, item := range opf.Manifest.Item {
 			if strings.HasPrefix(item.Media, "image/") &&
 				(strings.Contains(strings.ToLower(item.ID), "cover") ||
-				strings.Contains(strings.ToLower(item.Properties), "cover-image")) {
-					coverID = item.ID
-					break
-				}
+					strings.Contains(strings.ToLower(item.Properties), "cover-image")) {
+				coverID = item.ID
+				break
+			}
 		}
 	}
 
@@ -734,11 +739,11 @@ func extractCover(zipPath, fileName, format string) ([]byte, string, error) {
 	}
 
 	switch format {
-		case "fb2":
-			return extractCoverFromFB2(content)
-		case "epub":
-			return extractCoverFromEPUB(content)
-		default:
-			return nil, "", errCoverNotFound
+	case "fb2":
+		return extractCoverFromFB2(content)
+	case "epub":
+		return extractCoverFromEPUB(content)
+	default:
+		return nil, "", errCoverNotFound
 	}
 }
