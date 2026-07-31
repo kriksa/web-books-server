@@ -1,0 +1,114 @@
+<template>
+    <Window style="z-index: 200" @close="close">
+        <template #header>
+            Справка
+        </template>
+
+        <div class="col column" style="min-width: 600px">
+            <div class="bg-menu-1 row">
+                <q-tabs
+                    v-model="selectedTab"
+                    active-color="app"
+                    active-bg-color="app"
+                    indicator-color="bg-app"
+                    dense
+                    no-caps
+                    inline-label
+                    class="bg-menu-2 text-menu"
+                >
+                    <q-tab v-for="btn in buttons" :key="btn.value" :name="btn.value" :label="btn.label" />
+                </q-tabs>
+            </div>
+
+            <keep-alive>
+                <component :is="activePage" ref="page" class="col"></component>
+            </keep-alive>
+        </div>
+    </Window>
+</template>
+
+<script>
+//-----------------------------------------------------------------------------
+import vueComponent from '../../vueComponent.js';
+import _ from 'lodash';
+
+import Window from '../../share/Window.vue';
+import CommonHelpPage from './CommonHelpPage/CommonHelpPage.vue';
+import HotkeysHelpPage from './HotkeysHelpPage/HotkeysHelpPage.vue';
+import MouseHelpPage from './MouseHelpPage/MouseHelpPage.vue';
+import VersionHistoryPage from './VersionHistoryPage/VersionHistoryPage.vue';
+import DonateHelpPage from './DonateHelpPage/DonateHelpPage.vue';
+
+const pages = {
+    'CommonHelpPage': CommonHelpPage,
+    'HotkeysHelpPage': HotkeysHelpPage,
+    'MouseHelpPage': MouseHelpPage,
+    'VersionHistoryPage': VersionHistoryPage,
+    'DonateHelpPage': DonateHelpPage,
+};
+
+const basicTabs = [
+    ['CommonHelpPage', 'Общее'],
+    ['MouseHelpPage', 'Мышь/тачскрин'],
+    ['HotkeysHelpPage', 'Клавиатура'],
+    ['VersionHistoryPage', 'История версий'],
+];
+
+const componentOptions = {
+    components: Object.assign({ Window }, pages),
+};
+class HelpPage {
+    _options = componentOptions;
+
+    selectedTab = 'CommonHelpPage';
+
+    created() {
+        this.tabs = _.cloneDeep(basicTabs);
+        if (this.donation)
+            this.tabs.push(['DonateHelpPage', 'Помочь проекту']);
+    }
+
+    close() {
+        this.$emit('do-action', {action: 'help'});
+    }
+
+    get donation() {
+        return this.$store.state.config.donation;
+    }
+
+    get activePage() {
+        if (pages[this.selectedTab])
+            return pages[this.selectedTab];
+        return null;
+    }
+
+    get buttons() {
+        let result = [];
+        for (const tab of this.tabs)
+            result.push({label: tab[1], value: tab[0]});
+        return result;
+    }
+
+    activateDonateHelpPage() {
+        if (this.donation)
+            this.selectedTab = 'DonateHelpPage';
+    }
+
+    activateVersionHistoryHelpPage() {
+        this.selectedTab = 'VersionHistoryPage';
+    }
+
+    keyHook(event) {
+        if (event.type == 'keydown' && event.key == 'Escape') {
+            this.close();
+        }
+        return true;
+    }
+}
+
+export default vueComponent(HelpPage);
+//-----------------------------------------------------------------------------
+</script>
+
+<style scoped>
+</style>

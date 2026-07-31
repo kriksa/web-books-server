@@ -1,0 +1,76 @@
+/* Modern skin for Liberama (Reader UI) — keep functionality, improve visuals */
+
+:root {
+  --wb-bg: #0b1220;
+  --wb-surface: rgba(255, 255, 255, 0.06);
+  --wb-surface-2: rgba(255, 255, 255, 0.10);
+  --wb-border: rgba(255, 255, 255, 0.10);
+  --wb-text: rgba(255, 255, 255, 0.92);
+  --wb-text-dim: rgba(255, 255, 255, 0.72);
+  --wb-accent: #6366f1;
+  --wb-accent-2: #22c55e;
+  --wb-danger: #ef4444;
+}
+
+html, body {
+  background: var(--wb-bg) !important;
+  color: var(--wb-text) !important;
+}
+
+/* Quasar layout: soften edges and modernize toolbar/buttons */
+.q-layout, .q-page-container, .q-page {
+  background: transparent !important;
+}
+
+/* Reader toolbar buttons */
+.tool-button {
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  border: 1px solid var(--wb-border) !important;
+  background: var(--wb-surface) !important;
+  color: var(--wb-text) !important;
+  transition: transform .08s ease, background .12s ease, border-color .12s ease;
+}
+.tool-button:hover {
+  background: var(--wb-surface-2) !important;
+  border-color: rgba(255,255,255,0.18) !important;
+}
+.tool-button:active {
+  transform: translateY(1px);
+}
+.tool-button-active {
+  background: rgba(99,102,241,0.22) !important;
+  border-color: rgba(99,102,241,0.55) !important;
+  color: rgba(255,255,255,0.95) !important;
+}
+
+/* Header strip */
+.header {
+  background: rgba(2, 6, 23, 0.72) !important;
+  border-bottom: 1px solid var(--wb-border) !important;
+  backdrop-filter: blur(10px);
+}
+
+/* Dialogs / cards */
+.q-dialog__inner > div,
+.q-card {
+  background: rgba(15, 23, 42, 0.92) !important;
+  border: 1px solid var(--wb-border) !important;
+  border-radius: 16px !important;
+}
+
+/* Small text polish */
+.text-grey, .text-grey-7, .text-grey-8, .text-grey-9 {
+  color: var(--wb-text-dim) !important;
+}
+
+/* Links */
+a {
+  color: rgba(129, 140, 248, 1) !important;
+}
+
+/* Make reader main canvas area feel edge-to-edge */
+.main {
+  background: transparent !important;
+}
+

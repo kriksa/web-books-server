@@ -1,0 +1,20 @@
+[Unit]
+Description=Web Books Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=webbooks
+Group=webbooks
+WorkingDirectory=/opt/web-books
+ExecStart=/opt/web-books/bin/web_books
+Restart=on-failure
+RestartSec=5
+Environment=HOME=/opt/web-books
+
+# Optional: path to LibreOffice for DOC conversion
+# Environment=LIBREOFFICE_PATH=/usr/bin/soffice
+
+[Install]
+WantedBy=multi-user.target

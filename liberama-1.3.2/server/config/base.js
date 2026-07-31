@@ -1,0 +1,85 @@
+const path = require('path');
+const pckg = require('../../package.json');
+
+const execDir = path.resolve(__dirname, '..');
+
+module.exports = {
+    branch: 'unknown',
+    version: pckg.version,
+    name: pckg.name,
+
+    execDir,
+
+    loggingEnabled: true,
+
+    maxUploadFileSize: 50*1024*1024,//50Мб
+    maxTempPublicDirSize: 512*1024*1024,//512Мб + 20% квота если проблема с remoteWebDavStorage
+    maxUploadPublicDirSize: 200*1024*1024,//100Мб
+
+    useExternalBookConverter: false,
+    acceptFileExt: '.fb2, .fb3, .html, .txt, .zip, .bz2, .gz, .rar, .epub, .mobi, .rtf, .doc, .docx, .pdf, .djvu, .jpg, .jpeg, .png',
+    restricted: {},
+    webConfigParams: ['name', 'version', 'mode', 'rootPathStatic', 'maxUploadFileSize', 'useExternalBookConverter',
+        'acceptFileExt', 'bucEnabled', 'branch', 'networkLibraryLink', 'restricted', 'donation'],
+
+    jembaDb: [
+        {
+            serverMode: ['reader', 'omnireader', 'liberama'],
+            dbName: 'app',
+            thread: true,
+            openAll: true,
+        },
+        {
+            serverMode: ['reader', 'omnireader', 'liberama'],
+            dbName: 'reader-storage',
+            thread: true,
+            openAll: true,
+        },
+        {
+            serverMode: 'book_update_checker',
+            dbName: 'book-update-server',
+            thread: true,
+            openAll: true,            
+        },
+    ],
+
+    root: '',
+    servers: [
+        {
+            serverName: '1',
+            mode: 'reader', //'reader', 'omnireader', 'liberama', 'book_update_checker'
+            ip: '0.0.0.0',
+            port: '33080',
+        },
+        /*{
+            serverName: '2',
+            mode: 'book_update_checker',
+            isHttps: true,
+            keysFile: 'server',
+            ip: '0.0.0.0',
+            port: '33443',
+            accessToken: '',
+            shciForHost: {
+                'samlib.ru': 300000
+            },
+        }*/
+    ],
+
+    remoteStorage: false,
+    /*
+    remoteStorage: {
+        url: 'wss://127.0.0.1:11900',
+        accessToken: '',
+    },
+    */
+    bucEnabled: false,
+    bucServer: false,
+    /*
+    bucServer: {
+        url: 'wss://127.0.0.1:33443',
+        accessToken: '',
+    }
+    */
+    networkLibraryLink: '',
+};
+

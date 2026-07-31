@@ -1,0 +1,401 @@
+import _ from 'lodash';
+import dayjs from 'dayjs';
+import baseX from 'base-x';
+import PAKO from 'pako';
+import {Buffer} from 'safe-buffer';
+import sjclWrapper from './sjclWrapper';
+
+export const pako = PAKO;
+
+const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const bs58 = baseX(BASE58);
+
+export function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export function toHex(buf) {
+    return Buffer.from(buf).toString('hex');
+}
+
+export function stringToHex(str) {
+    return Buffer.from(str).toString('hex');
+}
+
+export function hexToString(str) {
+    return Buffer.from(str, 'hex').toString();
+}
+
+export function randomArray(len) {
+    const a = new Uint8Array(len);
+    window.crypto.getRandomValues(a);
+    return a;
+}
+
+export function randomHexString(len) {
+    return Buffer.from(randomArray(len)).toString('hex');
+}
+
+export function fallbackCopyTextToClipboard(text) {
+    let textArea = document.createElement('textarea');
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    let result = false;
+    try {
+         result = document.execCommand('copy');
+    } catch (e) {
+        //
+    }
+
+    document.body.removeChild(textArea);
+    return result;
+}
+
+export async function copyTextToClipboard(text) {
+    if (!navigator.clipboard) {
+        return fallbackCopyTextToClipboard(text);
+    }
+
+    let result = false;
+    try {
+        await navigator.clipboard.writeText(text);
+        result = true;
+    } catch (e) {
+        //
+    }
+
+    return result;
+}
+
+export function toBase58(data) {
+    return bs58.encode(Buffer.from(data));
+}
+
+export function fromBase58(data) {
+    return Buffer.from(bs58.decode(data));
+}
+
+//base-x слишком тормозит, используем sjcl
+export function toBase64(data) {
+    return sjclWrapper.codec.base64.fromBits(
+        sjclWrapper.codec.bytes.toBits(Buffer.from(data))
+    );
+}
+
+//base-x слишком тормозит, используем sjcl
+export function fromBase64(data) {
+    return Buffer.from(sjclWrapper.codec.bytes.fromBits(
+        sjclWrapper.codec.base64.toBits(data)
+    ));
+}
+
+export function hasProp(obj, prop) {
+    return Object.prototype.hasOwnProperty.call(obj, prop);
+}
+
+export function getObjDiff(oldObj, newObj, opts = {}) {
+    const {
+        exclude = [],
+        excludeAdd = [],
+        excludeDel = [],
+    } = opts;
+
+    const ex = new Set(exclude);
+    const exAdd = new Set(excludeAdd);
+    const exDel = new Set(excludeDel);
+
+    const makeObjDiff = (oldObj, newObj, keyPath) => {
+        const result = {__isDiff: true, change: {}, add: {}, del: []};
+
+        keyPath = `${keyPath}${keyPath ? '/' : ''}`;
+
+        for (const key of Object.keys(oldObj)) {
+            const kp = `${keyPath}${key}`;
+
+            if (Object.prototype.hasOwnProperty.call(newObj, key)) {
+                if (ex.has(kp))
+                    continue;
+
+                if (!_.isEqual(oldObj[key], newObj[key])) {
+                    if (_.isObject(oldObj[key]) && _.isObject(newObj[key])) {
+                        result.change[key] = makeObjDiff(oldObj[key], newObj[key], kp);
+                    } else {
+                        result.change[key] = _.cloneDeep(newObj[key]);
+                    }
+                }
+            } else {
+                if (exDel.has(kp))
+                    continue;
+                result.del.push(key);
+            }
+        }
+
+        for (const key of Object.keys(newObj)) {
+            const kp = `${keyPath}${key}`;
+            if (exAdd.has(kp))
+                continue;
+
+            if (!Object.prototype.hasOwnProperty.call(oldObj, key)) {
+                result.add[key] = _.cloneDeep(newObj[key]);
+            }
+        }
+
+        return result;
+    }
+
+    return makeObjDiff(oldObj, newObj, '');
+}
+
+export function isObjDiff(diff) {
+    return (_.isObject(diff) && diff.__isDiff && diff.change && diff.add && diff.del);
+}
+
+export function isEmptyObjDiff(diff) {
+    return (!isObjDiff(diff) ||
+        !(Object.keys(diff.change).length ||
+          Object.keys(diff.add).length ||
+          diff.del.length
+        )
+    );
+}
+
+export function isEmptyObjDiffDeep(diff, opts = {}) {
+    if (!isObjDiff(diff))
+        return true;
+
+    const {
+        isApplyChange = true,
+        isApplyAdd = true,
+        isApplyDel = true,
+    } = opts;
+
+    let notEmptyDeep = false;
+    const change = diff.change;
+    for (const key of Object.keys(change)) {
+        if (_.isObject(change[key]))
+            notEmptyDeep |= !isEmptyObjDiffDeep(change[key], opts);
+        else if (isApplyChange)
+            notEmptyDeep = true;
+    }
+
+    return !(
+        notEmptyDeep ||
+        (isApplyAdd && Object.keys(diff.add).length) ||
+        (isApplyDel && diff.del.length)
+    );
+}
+
+export function applyObjDiff(obj, diff, opts = {}) {
+    const {
+        isAddChanged = false,
+        isApplyChange = true,
+        isApplyAdd = true,
+        isApplyDel = true,
+    } = opts;
+
+    let result = _.cloneDeep(obj);
+    if (!diff.__isDiff)
+        return result;
+
+    const change = diff.change;
+    for (const key of Object.keys(change)) {
+        if (Object.prototype.hasOwnProperty.call(result, key)) {
+            if (_.isObject(change[key])) {
+                result[key] = applyObjDiff(result[key], change[key], opts);
+            } else {
+                if (isApplyChange)
+                    result[key] = _.cloneDeep(change[key]);
+            }
+        } else if (isAddChanged) {
+            result[key] = _.cloneDeep(change[key]);
+        }
+    }
+
+    if (isApplyAdd) {
+        for (const key of Object.keys(diff.add)) {
+            result[key] = _.cloneDeep(diff.add[key]);
+        }
+    }
+
+    if (isApplyDel && diff.del.length) {
+        for (const key of diff.del) {
+            delete result[key];
+        }
+        if (_.isArray(result))
+            result = result.filter(v => v);
+    }
+
+    return result;
+}
+
+export function parseQuery(str) {
+    if (typeof str != 'string' || str.length == 0)
+        return {};
+    let s = str.split('&');
+    let s_length = s.length;
+    let bit, query = {}, first, second;
+
+    for (let i = 0; i < s_length; i++) {
+        bit = s[i].split('=');
+        first = decodeURIComponent(bit[0]);
+        if (first.length == 0)
+            continue;
+        second = decodeURIComponent(bit[1]);
+        if (typeof query[first] == 'undefined')
+            query[first] = second;
+        else
+            if (query[first] instanceof Array)
+                query[first].push(second);
+            else
+                query[first] = [query[first], second]; 
+    }
+    return query;
+}
+
+export function escapeXml(str) {
+    return str.replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;')
+    ;
+}
+
+export function keyEventToCode(event) {
+    let result = [];
+    let code = event.code;
+
+    const modCode = code.substring(0, 3);
+    if (event.metaKey && modCode != 'Met')
+        result.push('Meta');
+    if (event.ctrlKey && modCode != 'Con')
+        result.push('Ctrl');
+    if (event.shiftKey && modCode != 'Shi')
+        result.push('Shift');
+    if (event.altKey && modCode != 'Alt')
+        result.push('Alt');
+    
+    if (modCode == 'Dig') {
+        code = code.substring(5, 6);
+    } else if (modCode == 'Key') {
+        code = code.substring(3, 4);
+    }
+    result.push(code);
+
+    return result.join('+');
+}
+
+export function userHotKeysObjectSwap(userHotKeys) {
+    let result = {};
+    for (const [name, codes] of Object.entries(userHotKeys)) {
+        for (const code of codes) {
+            result[code] = name;
+        }
+    }
+    return result;
+}
+
+export function removeHtmlTags(s) {
+    return s.replace(/(<([^>]+)>)/ig, '');
+}
+
+export function makeValidFilename(filename, repl = '_') {
+    let f = filename.replace(/[\x00\\/:*"<>|]/g, repl); // eslint-disable-line no-control-regex
+    f = f.trim();
+    while (f.length && (f[f.length - 1] == '.' || f[f.length - 1] == '_')) {
+        f = f.substring(0, f.length - 1);
+    }
+
+    if (f)
+        return f;
+    else
+        throw new Error('Invalid filename');
+}
+
+export function getBookTitle(fb2) {
+    fb2 = (fb2 ? fb2 : {});
+    const result = {};
+
+   if (fb2.author) {
+        const authorNames = fb2.author.map(a => _.compact([
+            a.lastName,
+            a.firstName,
+            a.middleName
+        ]).join(' '));
+
+        result.author = authorNames.join(', ');
+    }
+
+    if (fb2.sequence) {
+        const seqs = fb2.sequence.map(s => _.compact([
+            s.name,
+            (s.number ? `#${s.number}` : null),
+        ]).join(' '));
+
+        result.sequence = seqs.join(', ');
+        if (result.sequence)
+            result.sequenceTitle = `(${result.sequence})`;
+    }
+
+    result.bookTitle = _.compact([result.sequenceTitle, fb2.bookTitle]).join(' ');
+
+    result.fullTitle = _.compact([
+        result.author,
+        result.bookTitle
+    ]).join(' - ');
+
+    return result;
+}
+
+export function resizeImage(dataUrl, toWidth, toHeight, quality = 0.9) {
+    return new Promise ((resolve, reject) => { (async() => {
+        const img = new Image();
+
+        let resolved = false;
+        img.onload = () => {
+            try {
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > toWidth) {
+                        height = height * (toWidth / width);
+                        width = toWidth;
+                    }
+                } else {
+                    if (height > toHeight) {
+                        width = width * (toHeight / height);
+                        height = toHeight;
+                    }
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                const result = canvas.toDataURL('image/jpeg', quality);
+                resolved = true;
+                resolve(result);
+            } catch (e) {
+                reject(e);
+                return;
+            }
+        };
+
+        img.onerror = reject;
+
+        img.src = dataUrl;
+
+        await sleep(1000);
+        if (!resolved)
+            reject('Не удалось изменить размер');
+    })().catch(reject); });
+}
+
+export function dateFormat(date, format = 'DD.MM.YYYY') {
+    return dayjs(date).format(format);
+}

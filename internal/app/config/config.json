@@ -1,0 +1,9 @@
+{
+  "books_dir": "C:\\Users\\user\\AppData\\Local\\Temp\\TestSetupAndLogin1952148211\\001",
+  "port": "8080",
+  "opds_root": "/opds",
+  "admin_password_hash": "$2a$10$ZvhIckkAz5KI9yJngy0fjOq4Nk8LxXWBvf9zoNlJicAij/8tcbA8C",
+  "admin_username": "Admin",
+  "jwt_signing_key": "PnBCh+O/Ghb09iXD4H3rDxwtXbCr3BaIT14rkKOebXk=",
+  "reader_url": "https://reader.example.com/#/read?url="
+}

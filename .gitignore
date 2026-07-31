@@ -1,0 +1,44 @@
+# Go build
+/bin/
+*.exe
+*.test
+
+# Frontend (npm ci on server)
+/web/node_modules/
+/web/dist/
+/web/public/
+
+# Embedded SPA (make web / script.sh)
+/internal/spaembed/spa/*
+!/internal/spaembed/spa/.gitkeep
+
+# Liberama build artifacts
+/liberama-1.3.2/node_modules/
+/liberama-1.3.2/dist/
+/third_party/liberama/node_modules/
+/third_party/liberama/dist/
+
+# Build cache
+/.tmp/
+
+# Runtime (created on server)
+/config/config.json
+/config/config.bin
+/uploads/
+*.db
+*.db-shm
+*.db-wal
+
+# Legacy paths (removed from repo)
+/embed/
+/node_modules/
+/calibre-9.8.0/
+/web-assets/
+/public/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
